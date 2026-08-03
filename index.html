@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ritual — Habit Tracker</title>
+<title>Ritual — Habit Tracker by Md Siam Mridha</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -259,10 +259,34 @@
   <div class="login-card">
     <div class="login-moon">☾</div>
     <h2>Assalamu Alaikum</h2>
-    <p>Sign in to load your ritual log. Your progress is saved to this browser and restored every time you return.</p>
-    <input id="loginInput" type="text" placeholder="Enter your name" autocomplete="off" />
-    <button class="login-btn" id="loginBtn">Enter Tracker</button>
-    <p class="login-note">NO PASSWORD NEEDED · YOUR NAME IS YOUR KEY</p>
+
+    <!-- STEP 1: name -->
+    <div id="stepName">
+      <p>Sign in to load your ritual log. Your progress is saved to this browser and restored every time you return.</p>
+      <input id="loginNameInput" type="text" placeholder="Enter your name" autocomplete="off" />
+      <button class="login-btn" id="continueBtn">Continue</button>
+      <p class="login-note">NAME + 4-DIGIT PIN KEEP YOUR DATA PRIVATE</p>
+      <p class="login-note" style="margin-top:4px;opacity:.7;">Created by Md Siam Mridha</p>
+    </div>
+
+    <!-- STEP 2a: returning user enters PIN -->
+    <div id="stepPinLogin" class="hidden">
+      <p>Welcome back, <span id="pinLoginWho" style="color:var(--gold);"></span>. Enter your 4-digit PIN.</p>
+      <input id="pinLoginInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="• • • •" autocomplete="off" style="text-align:center;letter-spacing:8px;font-size:20px;" />
+      <p id="pinLoginError" style="color:var(--coral);font-size:12px;margin:-8px 0 14px;display:none;">Incorrect PIN. Please try again.</p>
+      <button class="login-btn" id="pinLoginBtn">Enter Tracker</button>
+      <button class="switch-btn" id="backFromPinLogin" style="margin-top:12px;width:100%;">← Use a different name</button>
+    </div>
+
+    <!-- STEP 2b: new user creates PIN -->
+    <div id="stepPinCreate" class="hidden">
+      <p>Create a 4-digit PIN for <span id="pinCreateWho" style="color:var(--gold);"></span>. You'll need it to log in next time.</p>
+      <input id="pinCreateInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="New 4-digit PIN" autocomplete="off" style="text-align:center;letter-spacing:8px;font-size:20px;" />
+      <input id="pinCreateConfirm" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Confirm PIN" autocomplete="off" style="text-align:center;letter-spacing:8px;font-size:20px;" />
+      <p id="pinCreateError" style="color:var(--coral);font-size:12px;margin:-8px 0 14px;display:none;"></p>
+      <button class="login-btn" id="pinCreateBtn">Create Account</button>
+      <button class="switch-btn" id="backFromPinCreate" style="margin-top:12px;width:100%;">← Use a different name</button>
+    </div>
   </div>
 </div>
 
@@ -535,6 +559,7 @@
   </div>
 
   <p class="footnote">ONE CHECK PER HABIT, PER DAY, IN ORDER · PROGRESS AUTO-SAVES</p>
+  <p class="footnote" style="margin-top:6px;">Created by Md Siam Mridha</p>
 </div>
 
 <script>
@@ -590,14 +615,35 @@
   let pomo = { secondsLeft:25*60, mode:'focus', running:false, timer:null };
   let reminderNotifiedKey = null;
 
-  /* ---------- storage helpers ---------- */
+  /* ---------- storage helpers (localStorage — persists across reloads in this browser) ---------- */
+  const LS_PREFIX = 'ritualTracker:';
   const memoryFallback = {};
+  function lsAvailable(){
+    try{
+      const t = '__ls_test__';
+      window.localStorage.setItem(t,'1');
+      window.localStorage.removeItem(t);
+      return true;
+    }catch(e){ return false; }
+  }
+  const HAS_LS = lsAvailable();
+
   async function storeGet(key){
-    try{ if(window.storage && window.storage.get){ const r = await window.storage.get(key,false); return r?r.value:null; } }catch(e){}
+    try{
+      if(HAS_LS){
+        const v = window.localStorage.getItem(LS_PREFIX+key);
+        return v===null ? null : v;
+      }
+    }catch(e){}
     return memoryFallback[key] || null;
   }
   async function storeSet(key, value){
-    try{ if(window.storage && window.storage.set){ await window.storage.set(key,value,false); return; } }catch(e){}
+    try{
+      if(HAS_LS){
+        window.localStorage.setItem(LS_PREFIX+key, value);
+        return;
+      }
+    }catch(e){}
     memoryFallback[key]=value;
   }
 
@@ -1341,6 +1387,21 @@
   document.getElementById('pomoFocusLen').addEventListener('change', ()=>{ if(pomo.mode==='focus'&&!pomo.running) pomoReset(); });
   pomoRender();
 
+  /* ---------- PIN hashing (client-side only — see note in chat) ---------- */
+  async function hashPin(pin){
+    try{
+      if(window.crypto && window.crypto.subtle){
+        const enc = new TextEncoder().encode('ritual-salt-'+pin);
+        const buf = await window.crypto.subtle.digest('SHA-256', enc);
+        return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+      }
+    }catch(e){}
+    let h=0; const s='ritual-salt-'+pin;
+    for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; }
+    return 'fallback'+h;
+  }
+  function isValidPin(v){ return /^[0-9]{4}$/.test(v); }
+
   /* ---------- login / user switching ---------- */
   async function loadUser(name){
     currentUser = name;
@@ -1376,22 +1437,100 @@
   }
   function dayOfYear(){ const now=new Date(); const start=new Date(now.getFullYear(),0,0); return Math.floor((now-start)/86400000); }
 
-  document.getElementById('loginBtn').onclick=()=>{
-    const val=document.getElementById('loginInput').value.trim();
-    if(!val) return;
-    loadUser(val);
-  };
-  document.getElementById('loginInput').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('loginBtn').click(); });
+  let pendingName = null;
+
+  function showStep(step){
+    document.getElementById('stepName').classList.toggle('hidden', step!=='name');
+    document.getElementById('stepPinLogin').classList.toggle('hidden', step!=='pinLogin');
+    document.getElementById('stepPinCreate').classList.toggle('hidden', step!=='pinCreate');
+    document.getElementById('pinLoginError').style.display='none';
+    document.getElementById('pinCreateError').style.display='none';
+  }
+
+  function sanitizePinField(el){
+    el.addEventListener('input', ()=>{ el.value = el.value.replace(/[^0-9]/g,'').slice(0,4); });
+  }
+  sanitizePinField(document.getElementById('pinLoginInput'));
+  sanitizePinField(document.getElementById('pinCreateInput'));
+  sanitizePinField(document.getElementById('pinCreateConfirm'));
+
+  async function goContinue(){
+    const name = document.getElementById('loginNameInput').value.trim();
+    if(!name) return;
+    pendingName = name;
+    const existingHash = await storeGet('userAuth:'+name);
+    if(existingHash){
+      document.getElementById('pinLoginWho').textContent = name;
+      document.getElementById('pinLoginInput').value='';
+      showStep('pinLogin');
+      document.getElementById('pinLoginInput').focus();
+    } else {
+      document.getElementById('pinCreateWho').textContent = name;
+      document.getElementById('pinCreateInput').value='';
+      document.getElementById('pinCreateConfirm').value='';
+      showStep('pinCreate');
+      document.getElementById('pinCreateInput').focus();
+    }
+  }
+
+  async function attemptPinLogin(){
+    const pin = document.getElementById('pinLoginInput').value;
+    const errEl = document.getElementById('pinLoginError');
+    if(!isValidPin(pin)){
+      errEl.textContent = 'Enter your 4-digit PIN.'; errEl.style.display='block'; return;
+    }
+    const storedHash = await storeGet('userAuth:'+pendingName);
+    const attemptHash = await hashPin(pin);
+    if(attemptHash !== storedHash){
+      errEl.textContent = 'Incorrect PIN. Please try again.'; errEl.style.display='block';
+      document.getElementById('pinLoginInput').value=''; document.getElementById('pinLoginInput').focus();
+      return;
+    }
+    errEl.style.display='none';
+    loadUser(pendingName);
+  }
+
+  async function attemptPinCreate(){
+    const pin = document.getElementById('pinCreateInput').value;
+    const confirmPin = document.getElementById('pinCreateConfirm').value;
+    const errEl = document.getElementById('pinCreateError');
+    if(!isValidPin(pin)){
+      errEl.textContent='PIN must be exactly 4 digits.'; errEl.style.display='block'; return;
+    }
+    if(pin !== confirmPin){
+      errEl.textContent="PINs don't match — try again."; errEl.style.display='block';
+      document.getElementById('pinCreateConfirm').value=''; document.getElementById('pinCreateConfirm').focus();
+      return;
+    }
+    errEl.style.display='none';
+    const hash = await hashPin(pin);
+    await storeSet('userAuth:'+pendingName, hash);
+    loadUser(pendingName);
+  }
+
+  document.getElementById('continueBtn').onclick = goContinue;
+  document.getElementById('loginNameInput').addEventListener('keydown', e=>{ if(e.key==='Enter') goContinue(); });
+
+  document.getElementById('pinLoginBtn').onclick = attemptPinLogin;
+  document.getElementById('pinLoginInput').addEventListener('keydown', e=>{ if(e.key==='Enter') attemptPinLogin(); });
+  document.getElementById('backFromPinLogin').onclick = ()=>{ showStep('name'); };
+
+  document.getElementById('pinCreateBtn').onclick = attemptPinCreate;
+  document.getElementById('pinCreateConfirm').addEventListener('keydown', e=>{ if(e.key==='Enter') attemptPinCreate(); });
+  document.getElementById('backFromPinCreate').onclick = ()=>{ showStep('name'); };
+
   document.getElementById('switchBtn').onclick=()=>{
     document.getElementById('app').classList.add('hidden');
     document.getElementById('loginScreen').classList.remove('hidden');
-    document.getElementById('loginInput').value='';
-    document.getElementById('loginInput').focus();
+    document.getElementById('loginNameInput').value='';
+    showStep('name');
+    document.getElementById('loginNameInput').focus();
   };
 
   (async function initLogin(){
+    showStep('name');
     const remembered = await storeGet('lastUser');
-    if(remembered) document.getElementById('loginInput').value = remembered;
+    if(remembered) document.getElementById('loginNameInput').value = remembered;
   })();
 
   initSky();
